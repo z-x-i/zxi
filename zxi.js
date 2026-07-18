@@ -1,145 +1,214 @@
 (function() {
     "use strict";
 
-    // আপনার মেইন ব্যাকএন্ড সার্ভার ইউআরএল
     const SERVER_URL = "https://zxi-file-loader.ah4734536.workers.dev"; 
 
-    // ক্লিনআপ: আগের কোনো এলিমেন্ট থাকলে তা রিমুভ করা হচ্ছে
+    // আগের কোনো প্যানেল বা ওভারলে থাকলে তা মুছে ফেলা
     const oldOverlay = document.getElementById('zxi-global-overlay');
     if(oldOverlay) oldOverlay.remove();
 
-    let matrixInterval = null;
+    let rainAnimationId = null;
+    let audioContext = null;
+    let rainAudio = null;
 
-    // নতুন গোল্ডেন-ব্ল্যাক লাক্সারি স্টাইল ইনজেকশন
+    // মডার্ন প্রিমিয়াম UI স্টাইল ইনজেকশন
     const styleSheet = document.createElement("style");
     styleSheet.textContent = `
-        @keyframes gold-pulse {
-            0%, 100% { box-shadow: 0 0 25px rgba(255, 215, 0, 0.2); border-color: rgba(255, 215, 0, 0.4); }
-            50% { box-shadow: 0 0 45px rgba(255, 215, 0, 0.5); border-color: rgba(255, 215, 0, 0.9); }
+        @keyframes ui-entrance {
+            from { opacity: 0; transform: scale(0.95); backdrop-filter: blur(0px); }
+            to { opacity: 1; transform: scale(1); backdrop-filter: blur(20px); }
         }
-        .zxi-gold-btn { width: 100%; padding: 16px; border-radius: 12px; font-weight: bold; cursor: pointer; font-size: 14px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; letter-spacing: 2px; margin-bottom: 14px; border: 1px solid #ffd700; background: transparent; color: #ffd700; transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); text-shadow: 0 0 5px rgba(255, 215, 0, 0.5); position: relative; z-index: 2; overflow: hidden; }
-        .zxi-gold-btn:hover { background: #ffd700; color: #000; box-shadow: 0 0 25px #ffd700; text-shadow: none; }
-        
-        .zxi-input-gold { width: 100%; padding: 16px; margin-bottom: 25px; border: 1px solid rgba(255, 215, 0, 0.3); border-radius: 12px; background: rgba(15, 15, 15, 0.85); color: #fff; text-align: center; font-size: 15px; outline: none; font-family: monospace; transition: all 0.3s; position: relative; z-index: 2; }
-        .zxi-input-gold:focus { border-color: #ffd700; box-shadow: 0 0 15px rgba(255, 215, 0, 0.3); }
-        
-        /* গোল্ডেন টাচ রিপল ইফেক্ট */
-        .zxi-gold-ripple { position: absolute; background: rgba(255, 215, 0, 0.4); border-radius: 50%; pointer-events: none; transform: scale(0); animation: zxi-ripple-effect 0.6s cubic-bezier(0.1, 0.8, 0.3, 1); z-index: 999999; }
-        @keyframes zxi-ripple-effect { to { transform: scale(6); opacity: 0; } }
+        @keyframes glow-pulse {
+            0%, 100% { box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 20px rgba(255, 255, 255, 0.05); }
+            50% { box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 30px rgba(255, 255, 255, 0.15); }
+        }
+        .zxi-premium-input {
+            width: 100%; padding: 16px; margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 14px;
+            background: rgba(20, 20, 20, 0.6); color: #fff;
+            text-align: center; font-size: 15px; outline: none;
+            font-family: 'Segoe UI', system-ui, sans-serif; transition: all 0.3s ease;
+            box-sizing: border-box;
+        }
+        .zxi-premium-input:focus {
+            border-color: rgba(255, 255, 255, 0.4);
+            background: rgba(30, 30, 30, 0.8);
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.1);
+        }
+        .zxi-premium-btn {
+            width: 100%; padding: 16px; border-radius: 14px;
+            font-weight: 600; cursor: pointer; font-size: 14px;
+            font-family: 'Segoe UI', system-ui, sans-serif; letter-spacing: 1px;
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            background: #ffffff; color: #000000;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 15px rgba(255, 255, 255, 0.1);
+        }
+        .zxi-premium-btn:hover {
+            background: transparent; color: #ffffff;
+            border-color: rgba(255, 255, 255, 0.8);
+            box-shadow: 0 4px 25px rgba(255, 255, 255, 0.2);
+        }
+        .zxi-secondary-btn {
+            width: 100%; padding: 14px; border-radius: 14px;
+            font-weight: 500; cursor: pointer; font-size: 13px;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.7);
+            margin-top: 10px; transition: all 0.3s ease;
+        }
+        .zxi-secondary-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
     `;
     document.head.appendChild(styleSheet);
 
-    // পুরো স্ক্রিন কালো করার জন্য ফুল-স্ক্রিন ওভারলে কন্টেইনার
+    // ফুল-স্ক্রিন পিচ-ব্ল্যাক ওভারলে
     const globalOverlay = document.createElement('div');
     globalOverlay.id = 'zxi-global-overlay';
-    globalOverlay.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; background:#000000; z-index:2147483646; overflow:hidden; display:flex; align-items:center; justify-content:center;';
+    globalOverlay.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; background:#050508; z-index:2147483646; overflow:hidden; display:flex; align-items:center; justify-content:center;';
     
-    // ফুল-স্ক্রিন গোল্ডেন ক্যানভাস এবং মেইন ইন্টারফেস কন্টেইনার
     globalOverlay.innerHTML = `
-        <canvas id="matrix-fullscreen-canvas" style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:1; opacity:0.35; pointer-events:none;"></canvas>
+        <!-- রিয়ালিস্টিক রেইন ক্যানভাস -->
+        <canvas id="zxi-rain-canvas" style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:1; pointer-events:none;"></canvas>
         
-        <!-- মেইন কনসোল বক্স -->
-        <div id="zxi-auth-box" style="position:relative; z-index:2; background:rgba(10, 10, 10, 0.85); backdrop-filter:blur(25px); -webkit-backdrop-filter:blur(25px); color:#ffd700; padding:45px 35px; border-radius:24px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align:center; border:1px solid rgba(255, 215, 0, 0.3); width:390px; box-sizing:border-box; animation: gold-pulse 4s infinite ease-in-out;">
-            <button id="zxi-panel-close" style="position:absolute; top:20px; right:20px; background:none; border:none; color:#ff4444; font-size:16px; cursor:pointer; font-family:monospace; font-weight:bold; outline:none; transition:0.3s;">[ CLOSE ]</button>
+        <!-- সাউন্ড কন্ট্রোল বাটন -->
+        <button id="zxi-sound-toggle" style="position:fixed; top:30px; left:30px; z-index:2147483647; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#fff; padding:10px 18px; border-radius:20px; cursor:pointer; font-family:sans-serif; font-size:13px; backdrop-filter:blur(10px); transition:0.3s;">🔊 Mute Rain</button>
+
+        <!-- গ্লাস মরফিজম মেইন কন্টেইনার -->
+        <div id="zxi-auth-box" style="position:relative; z-index:2; background:rgba(15, 15, 20, 0.45); backdrop-filter:blur(30px); -webkit-backdrop-filter:blur(30px); color:#ffffff; padding:50px 40px; border-radius:28px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align:center; border:1px solid rgba(255, 255, 255, 0.08); width:400px; box-sizing:border-box; animation: ui-entrance 0.6s cubic-bezier(0.16, 1, 0.3, 1), glow-pulse 5s infinite ease-in-out;">
+            <button id="zxi-panel-close" style="position:absolute; top:25px; right:25px; background:none; border:none; color:rgba(255,255,255,0.4); font-size:14px; cursor:pointer; font-weight:500; outline:none; transition:0.3s;">✕ CLOSE</button>
             
             <div id="zxi-dynamic-content">
-                <h3 style="margin:15px 0 6px 0; color:#ffd700; font-size:24px; font-weight:800; letter-spacing:3px; text-shadow: 0 0 12px rgba(255, 215, 0, 0.6);">ZXI PREMIUM</h3>
-                <p style="margin:0 0 30px 0; color:#888; font-size:11px; letter-spacing:4px; font-family:monospace;">CORE.SYSTEM.INITIALIZATION</p>
+                <h3 style="margin:0 0 6px 0; color:#ffffff; font-size:26px; font-weight:700; letter-spacing:-0.5px;">ZXI CORE</h3>
+                <p style="margin:0 0 35px 0; color:rgba(255, 255, 255, 0.4); font-size:13px; font-weight:400;">Secure Access Verification</p>
                 
-                <input type="password" id="zxi-key-input" class="zxi-input-gold" placeholder="[ ENTER ACCESS KEY ]">
-                <button id="zxi-login-btn" class="zxi-gold-btn" style="background:#ffd700; color:#000; font-weight:900;">DECRYPT CORE</button>
+                <input type="password" id="zxi-key-input" class="zxi-premium-input" placeholder="Enter Access Token">
+                <button id="zxi-login-btn" class="zxi-premium-btn">Verify & Initialize</button>
                 
-                <div id="zxi-status" style="margin-top:20px; font-size:11px; font-weight:bold; color:#555; letter-spacing:2px; font-family:monospace;">STATUS: STANDBY</div>
+                <div id="zxi-status" style="margin-top:25px; font-size:12px; color:rgba(255,255,255,0.3); font-weight:500; letter-spacing:0.5px;">SYSTEM STATUS: IDLE</div>
             </div>
         </div>
     `;
     document.body.appendChild(globalOverlay);
 
-    // টাচ/ক্লিক সোনালী রিপল ইফেক্ট
-    globalOverlay.addEventListener('click', (e) => {
-        const ripple = document.createElement('div');
-        ripple.className = 'zxi-gold-ripple';
-        globalOverlay.appendChild(ripple);
-        ripple.style.left = `${e.clientX - 10}px`;
-        ripple.style.top = `${e.clientY - 10}px`;
-        ripple.style.width = '20px';
-        ripple.style.height = '20px';
-        ripple.addEventListener('animationend', () => ripple.remove());
-    });
-
-    // ফুল-স্ক্রিন গোল্ডেন চাইনিজ রেইন এনিমেশন (ঝিনুকের মতো উজ্জ্বল স্পার্কল ইফেক্ট সহ)
-    function initGoldMatrixRain() {
-        const canvas = document.getElementById('matrix-fullscreen-canvas');
-        if(!canvas) return;
-        const ctx = canvas.getContext('2d');
+    // ব্যাকগ্রাউন্ড রিয়ালিস্টিক রেইন সাউন্ড ইঞ্জিন (Royalty-free Ambient Rain Loop)
+    function initRainAudio() {
+        rainAudio = new Audio("https://assets.mixkit.co/active_storage/sfx/2467/2467-84.wav"); 
+        rainAudio.loop = true;
+        rainAudio.volume = 0.6;
         
+        // ব্রাউজার পলিসির কারণে ইউজারের প্রথম ইন্টারঅ্যাকশনে প্লে হবে
+        rainAudio.play().catch(() => {
+            // যদি অটো-প্লে ব্লক হয়, তবে পেজে যেকোনো ক্লিকের পর প্লে হবে
+            const playOnInteraction = () => {
+                rainAudio.play();
+                document.removeEventListener('click', playOnInteraction);
+            };
+            document.addEventListener('click', playOnInteraction);
+        });
+
+        // সাউন্ড অন/অফ টগল
+        document.getElementById('zxi-sound-toggle').addEventListener('click', function() {
+            if (rainAudio.paused) {
+                rainAudio.play();
+                this.textContent = "🔊 Mute Rain";
+                this.style.background = "rgba(255,255,255,0.05)";
+            } else {
+                rainAudio.pause();
+                this.textContent = "🔇 Unmute Rain";
+                this.style.background = "rgba(255,68,68,0.15)";
+            }
+        });
+    }
+    initRainAudio();
+
+    // আল্ট্রা-রিয়ালিস্টিক 3D Parallax Rain Simulation
+    function initRealisticRain() {
+        const canvas = document.getElementById('zxi-rain-canvas');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
-        // প্রফেশনাল ট্র্যাডিশনাল চাইনিজ ক্যারেক্টার সেট
-        const chinese = "零一二三四五六七八九十百千万亿𪚥𩶘𩙖𢏵𣡽𤳏𦈡𧚔𨷿𩬊𪏵𧿏永和三暮春之初會於會稽山陰之蘭亭修禊事也群賢畢至少長咸集";
-        const alphabet = chinese.split("");
+        const maxDrops = 180; // স্ক্রিন অনুযায়ী ড্রপ সংখ্যা
+        const drops = [];
 
-        const fontSize = 16; // একটু বড় সাইজ যাতে স্ক্রিনে দেখতে গর্জিয়াস লাগে
-        const columns = canvas.width / fontSize;
-        const rainDrops = Array(Math.floor(columns)).fill(1);
+        // ড্রপ অবজেক্ট ক্রিয়েশন (৩টি ভিন্ন লেয়ার গভীরতা তৈরি করতে)
+        for (let i = 0; i < maxDrops; i++) {
+            drops.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * -canvas.height,
+                length: Math.random() * 20 + 15,    // ফোঁটার দৈর্ঘ্য
+                speed: Math.random() * 15 + 15,     // পড়ার গতি
+                opacity: Math.random() * 0.15 + 0.05, // আলোর গভীরতা/স্বচ্ছতা
+                weight: Math.random() * 1 + 0.5     // ফোঁটার পুরুত্ব
+            });
+        }
 
-        const draw = () => {
-            // গভীর পিচ-ব্ল্যাক ফেড আউট ট্রেইল
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.06)';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            for (let i = 0; i < rainDrops.length; i++) {
-                const text = alphabet[Math.floor(Math.random() * alphabet.length)];
+            for (let i = 0; i < maxDrops; i++) {
+                const d = drops[i];
                 
-                // ঝিনুকের মতো ঝকঝকে ভাইব্রেন্ট গোল্ডেন গ্রেডিয়েন্ট তৈরি
-                const isBright = Math.random() > 0.93; // কিছু ক্যারেক্টার এক্সট্রা গ্লো করবে
-                ctx.fillStyle = isBright ? '#ffffff' : '#ffd700';
-                ctx.shadowColor = '#ffd700';
-                ctx.shadowBlur = isBright ? 20 : 6; // স্পার্কলিং গ্লো ইফেক্ট
+                // রিয়ালিস্টিক ড্রপ ডিজাইন উইথ লাইট গ্লো
+                ctx.beginPath();
+                ctx.moveTo(d.x, d.y);
+                // হালকা বাঁকা (Slanted) বৃষ্টি যাতে রিয়ালিস্টিক উইন্ড ইফেক্ট আসে
+                ctx.lineTo(d.x + 1.5, d.y + d.length); 
+                
+                ctx.strokeStyle = `rgba(174, 219, 255, ${d.opacity})`; 
+                ctx.lineWidth = d.weight;
+                ctx.lineCap = 'round';
+                ctx.stroke();
 
-                ctx.font = 'bold ' + fontSize + 'px monospace';
-                ctx.fillText(text, i * fontSize, rainDrops[i] * fontSize);
+                // ড্রপ মুভমেন্ট আপডেট
+                d.y += d.speed;
+                d.x += 0.5; // বাতাসের কারণে হালকা ডান দিকে সরবে
 
-                // শ্যাডো রিসেট করা হচ্ছে পরেরগুলোর পারফরম্যান্সের জন্য
-                ctx.shadowBlur = 0;
-
-                if (rainDrops[i] * fontSize > canvas.height && Math.random() > 0.985) {
-                    rainDrops[i] = 0;
+                // স্ক্রিনের বাইরে চলে গেলে আবার ওপরে রিসেট
+                if (d.y > canvas.height) {
+                    d.y = Math.random() * -40;
+                    d.x = Math.random() * canvas.width;
                 }
-                rainDrops[i]++;
             }
-        };
-        
-        // উইন্ডো রিসাইজ হ্যান্ডলার
+            rainAnimationId = requestAnimationFrame(draw);
+        }
+
         window.addEventListener('resize', () => {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
         });
 
-        matrixInterval = setInterval(draw, 33);
+        draw();
     }
-    
-    setTimeout(initGoldMatrixRain, 50);
+    setTimeout(initRealisticRain, 50);
 
-    // ক্লোজ ও ক্লিনআপ
+    // সম্পূর্ণ ইন্টারফেস বন্ধ ও ক্লিনআপ
     function cleanup() {
-        if(matrixInterval) clearInterval(matrixInterval);
+        if (rainAnimationId) cancelAnimationFrame(rainAnimationId);
+        if (rainAudio) {
+            rainAudio.pause();
+            rainAudio = null;
+        }
         globalOverlay.remove();
     }
     document.getElementById('zxi-panel-close').addEventListener('click', cleanup);
 
-    // মেইন বাইপাস ইন্টারফেস (সোনালী থিমে সাজানো)
+    // মেইন ড্যাশবোর্ড বা বাইপাস ইন্টারফেস (প্রিমিয়াম লুক)
     function showMainOptionsPanel() {
         const contentDiv = document.getElementById('zxi-dynamic-content');
         contentDiv.innerHTML = `
-            <h3 style="margin:15px 0 6px 0; color:#ffd700; font-size:22px; font-weight:800; letter-spacing:2px; text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);">// CORE_TERMINAL</h3>
-            <p style="margin:0 0 25px 0; color:#888; font-size:11px; letter-spacing:2px; font-family:monospace;">ACCESS AUTHORIZED. SYSTEM READY.</p>
+            <h3 style="margin:0 0 6px 0; color:#ffffff; font-size:24px; font-weight:700; letter-spacing:-0.5px;">CONSOLE INTERFACE</h3>
+            <p style="margin:0 0 30px 0; color:rgba(255, 255, 255, 0.4); font-size:13px;">Terminal authorized and ready</p>
             
-            <input type="text" id="zxi-bypass-input" class="zxi-input-gold" placeholder="[ PASTE TARGET URL ]" style="text-align: left; padding-left: 15px;">
-            <button id="zxi-fetch-bypass-btn" class="zxi-gold-btn">RUN AUTOMATED EXPLOIT</button>
+            <input type="text" id="zxi-bypass-input" class="zxi-premium-input" placeholder="Paste target URL instance" style="text-align: left; padding-left: 18px;">
+            <button id="zxi-fetch-bypass-btn" class="zxi-premium-btn">Execute Link Bypass</button>
             
-            <div id="zxi-bypass-status" style="margin-top:20px; font-size:11px; font-weight:bold; color:#555; letter-spacing:1px; font-family:monospace;">STATUS: INJECTOR_IDLE</div>
+            <div id="zxi-bypass-status" style="margin-top:25px; font-size:12px; color:rgba(255,255,255,0.3); font-weight:500;">SYSTEM STATUS: READY</div>
         `;
 
         const bypassInput = document.getElementById('zxi-bypass-input');
@@ -149,11 +218,11 @@
         fetchBtn.addEventListener('click', async () => {
             const urlVal = bypassInput.value.trim();
             if (!urlVal) {
-                bStatus.innerHTML = "<span style='color:#ff4444;'>[!] ERROR: URL INSTANCE REQUIRED</span>";
+                bStatus.innerHTML = "<span style='color:#ff6b6b;'>[!] URL instance required</span>";
                 return;
             }
 
-            bStatus.innerHTML = "<span style='color:#ffd700;'>[~] INJECTING EXPLOIT PAYLOAD...</span>";
+            bStatus.innerHTML = "<span style='color:rgba(255,255,255,0.6);'>Resolving secure endpoint...</span>";
             fetchBtn.disabled = true;
             fetchBtn.style.opacity = "0.4";
 
@@ -162,29 +231,29 @@
                 const data = await response.json();
                 
                 if (data && data.bypassed_url) {
-                    bStatus.innerHTML = "<span style='color:#00ff66;'>[+] DATA DECRYPTED SUCCESSFULLY ✓</span>";
+                    bStatus.innerHTML = "<span style='color:#51cf66;'>[+] Decryption successful ✓</span>";
                     bypassInput.value = data.bypassed_url;
                     bypassInput.select();
                     
-                    fetchBtn.outerHTML = `<button id="zxi-copy-btn" class="zxi-gold-btn" style="background:#ffd700; color:#000; box-shadow: 0 0 20px #ffd700;">EXTRACT DATA (COPY)</button>`;
+                    fetchBtn.outerHTML = `<button id="zxi-copy-btn" class="zxi-premium-btn" style="background:#51cf66; color:#fff; border-color:#51cf66;">Copy Decrypted Link</button>`;
                     
                     document.getElementById('zxi-copy-btn').addEventListener('click', () => {
                         navigator.clipboard.writeText(data.bypassed_url);
-                        bStatus.innerHTML = "<span style='color:#00ff66;'>[+] COPIED. ERASING SYSTEM LOGS...</span>";
+                        bStatus.innerHTML = "<span style='color:#51cf66;'>Link copied. Cleaning logs...</span>";
                         setTimeout(cleanup, 1200);
                     });
                 } else {
-                    bStatus.innerHTML = "<span style='color:#ff4444;'>[!] INJECTION REJECTED BY SERVER</span>";
+                    bStatus.innerHTML = "<span style='color:#ff6b6b;'>[!] Server rejected token parameters</span>";
                     fetchBtn.disabled = false; fetchBtn.style.opacity = "1";
                 }
             } catch (err) {
-                bStatus.innerHTML = "<span style='color:#ff4444;'>[!] CRITICAL GATEWAY TIMEOUT</span>";
+                bStatus.innerHTML = "<span style='color:#ff6b6b;'>[!] Request transmission timeout</span>";
                 fetchBtn.disabled = false; fetchBtn.style.opacity = "1";
             }
         });
     }
 
-    // লগইন চেক হ্যান্ডলার 
+    // লগইন ইভেন্ট লিসেনার
     const keyInput = document.getElementById('zxi-key-input');
     const loginBtn = document.getElementById('zxi-login-btn');
     const statusDiv = document.getElementById('zxi-status');
@@ -192,19 +261,18 @@
     loginBtn.addEventListener('click', () => {
         const inputKey = keyInput.value.trim();
         if(!inputKey) { 
-            statusDiv.innerHTML = "<span style='color:#ff4444;'>[!] AUTHENTICATION KEY REQUIRED</span>"; 
+            statusDiv.innerHTML = "<span style='color:#ff6b6b;'>Access key token required</span>"; 
             return; 
         }
         
-        statusDiv.innerHTML = "<span style='color:#ffd700;'>COMPUTING ACCESS SIGNATURE...</span>";
+        statusDiv.innerHTML = "<span style='color:rgba(255,255,255,0.5);'>Validating secure cryptographic key...</span>";
         
         setTimeout(() => {
-            // ডিফল্ট পাসওয়ার্ড 'admin' রাখা হয়েছে, আপনার সার্ভার লজিক অনুযায়ী বদলাতে পারবেন
             if (inputKey === "admin") {
-                statusDiv.innerHTML = "<span style='color:#00ff66;'>ACCESS GRANTED</span>";
-                setTimeout(showMainOptionsPanel, 800);
+                statusDiv.innerHTML = "<span style='color:#51cf66;'>ACCESS GRANTED</span>";
+                setTimeout(showMainOptionsPanel, 600);
             } else {
-                statusDiv.innerHTML = "<span style='color:#ff4444;'>[!] INVALID ACCESS CREDENTIALS</span>";
+                statusDiv.innerHTML = "<span style='color:#ff6b6b;'>Authentication mismatch error</span>";
             }
         }, 600);
     });
